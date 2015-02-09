@@ -1,4 +1,12 @@
-*.so
-*.dylib
 *.dll
+*.dylib
+*.so
+.DS_Store
+.idea
+.pub
+.settings/
+build
+cache/
 docs/
+packages
+pubspec.lock

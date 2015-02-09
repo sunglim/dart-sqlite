@@ -18,24 +18,25 @@
 #define DART_FUNCTION(name) static void name(Dart_NativeArguments arguments)
 #define DART_RETURN(expr) {Dart_SetReturnValue(arguments, expr); Dart_ExitScope(); return;}
 
-Dart_NativeFunction ResolveName(Dart_Handle name, int argc);
+Dart_NativeFunction ResolveName(Dart_Handle name, int argc, bool* auto_setup_scope);
 
 static Dart_Handle library;
 
 typedef struct {
   sqlite3* db;
   sqlite3_stmt* stmt;
-  Dart_Handle finalizer;
+  //Dart_Handle finalizer;
 } statement_peer;
 
 DART_EXPORT Dart_Handle dart_sqlite_Init(Dart_Handle parent_library) {
   if (Dart_IsError(parent_library)) { return parent_library; }
 
-  Dart_Handle result_code = Dart_SetNativeResolver(parent_library, ResolveName);
+
+  Dart_Handle result_code =
+      Dart_SetNativeResolver(parent_library, ResolveName, NULL);
   if (Dart_IsError(result_code)) return result_code;
 
-  library = Dart_NewPersistentHandle(parent_library);
-  return parent_library;
+  return Dart_Null();
 }
 
 void Throw(const char* message) {
@@ -97,16 +98,17 @@ DART_FUNCTION(Version) {
   DART_RETURN(Dart_NewStringFromCString(sqlite3_version));
 }
 
-void finalize_statement(Dart_Handle handle, void* ctx) {
+void finalize_statement(void* isolate_callback_data,
+    Dart_WeakPersistentHandle handle,
+    void* buffer) {
   static bool warned = false;
-  statement_peer* statement = (statement_peer*) ctx;
+  statement_peer* statement = (statement_peer*)buffer;
   sqlite3_finalize(statement->stmt);
   if (!warned) {
     fprintf(stderr, "Warning: sqlite.Statement was not closed before garbage collection.\n");
     warned = true;
   }
   sqlite3_free(statement);
-  Dart_DeletePersistentHandle(statement->finalizer);
 }
 
 DART_FUNCTION(PrepareStatement) {
@@ -126,7 +128,8 @@ DART_FUNCTION(PrepareStatement) {
   statement_peer* peer = (statement_peer*) sqlite3_malloc(sizeof(statement_peer));
   peer->db = db;
   peer->stmt = stmt;
-  peer->finalizer = CheckDartError(Dart_NewWeakPersistentHandle(statement_object, peer, finalize_statement));
+  //peer->finalizer = CheckDartError(Dart_NewWeakPersistentHandle(statement_object, peer, sizeof(statement_peer), finalize_statement));
+  Dart_NewWeakPersistentHandle(statement_object, peer, sizeof(statement_peer), finalize_statement);
   DART_RETURN(Dart_NewInteger((int64_t) peer));
 }
 
@@ -251,7 +254,7 @@ DART_FUNCTION(CloseStatement) {
 
   statement_peer* statement = get_statement(statement_handle);
   CheckSqlError(statement->db, sqlite3_finalize(statement->stmt));
-  Dart_DeletePersistentHandle(statement->finalizer);
+  //Dart_DeletePersistentHandle(statement->finalizer);
   sqlite3_free(statement);
   DART_RETURN(Dart_Null());
 }
